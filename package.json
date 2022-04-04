@@ -1,0 +1,25 @@
+{
+  "name": "xumm-push-backend",
+  "version": "1.0.0",
+  "description": "XUMM Push Backend",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "DEBUG=xummpush* nodemon"
+  },
+  "author": "Wietse Wind <w@xrpl-labs.com>",
+  "license": "ISC",
+  "dependencies": {
+    "debug": "^4.3.4",
+    "dotenv": "^16.0.0",
+    "express": "^4.17.3",
+    "helmet": "^5.0.2",
+    "ioredis": "^5.0.1",
+    "morgan-debug": "^2.0.0",
+    "node-fetch": "^3.2.3",
+    "pm2": "^5.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.15"
+  }
+}
