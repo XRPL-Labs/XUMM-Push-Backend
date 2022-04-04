@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "DEBUG=xummpush* nodemon"
+    "dev": "DEBUG=xummpush* nodemon",
+    "pm2": "DEBUG=xummpush* pm2 reload pm2.config.js"
   },
   "author": "Wietse Wind <w@xrpl-labs.com>",
   "license": "ISC",
