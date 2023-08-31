@@ -1,5 +1,8 @@
 require('dotenv').config()
 
+const { initializeApp, cert } = require('firebase-admin/app')
+const { Messaging } = require('firebase-admin/messaging')
+
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const debug = require('debug')
 
@@ -17,7 +20,19 @@ const ioredis = require('ioredis')
 log({____TODO____: 'INFORM MATTERMOST ABOUT A NEW BOOT'})
 
 const { encrypt, decrypt, setSecret } = require('./crypto')
+
 let k = null
+let fcm
+
+const register_fcmsa = _fcmsa => {
+  if (typeof _fcmsa === 'object' && _fcmsa) {
+    log('Registered FCM')
+    fcmsa = _fcmsa
+    fcm = new Messaging(initializeApp({
+      credential: cert(_fcmsa)
+    }))
+  }
+}
 
 if (typeof process.env?.FCM_KEY === 'string') {
   k = process.env.FCM_KEY.trim()
@@ -80,29 +95,81 @@ app.post('/send/:device([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89ABab][0
       throw new Error('Cannot route message')
     }
 
-    const response = await fetch('https://fcm.googleapis.com/fcm/send', {
-      method: 'post',
-      body: JSON.stringify({
-        ...req.body,
-        to: token
-      }),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'key=' + k
+    // TODO: Push notification body change // see: test, fcm-migration.js
+
+    if (fcm) {
+      // NEW SERVICE
+      // log('NEW FCM')
+      const legacyNotification = req.body
+      const badge = String(legacyNotification?.notification?.badge || legacyNotification?.data?.badge || 0)
+      const values = { ...(legacyNotification?.notification || {}), ...(legacyNotification?.data || {}) }
+      const filteredValues = Object.keys(values).filter(k => ['badge'].indexOf(k) < 0).reduce((a, b) => {
+        if (typeof b === 'number' || typeof b === 'string' || typeof b === 'boolean') {
+          Object.assign(a, { [b]: String(values[b]) })
+        }
+        return a
+      }, {})
+      const sound = legacyNotification?.notification?.sound || legacyNotification?.data?.sound
+      
+      const msgres = await fcm.send({
+          token,
+          notification: {
+            title: legacyNotification?.notification?.title,
+            body: legacyNotification?.notification?.body,
+          },
+          data: {
+            ...filteredValues,
+            _badge_count: badge,
+          },
+          android: {
+            notification: {
+              click_action: '',
+              sound,
+            }
+          },
+          apns: {
+            payload: {
+              aps: {
+                category : '',
+                sound,
+                badge: Number(badge),
+              }
+            }
+          }
+      })
+      // End new (non legacy)
+      res
+        .status(200)
+        .end(msgres)
+    } else {
+      // LEGACY SERVICE DEPR
+      // log('OLD FCM')
+      const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+        method: 'post',
+        body: JSON.stringify({
+          ...req.body,
+          to: token
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'key=' + k
+        }
+      })
+
+      const responseText = await response.text()
+
+      log('Push response', response.status, responseText) // , response.headers
+
+      if (response.headers?.['content-type']) {
+        res.set('content-type', response.headers['content-type'])
       }
-    })
 
-    const responseText = await response.text()
+      res
+        .status(response.status || 200)
+        .end(responseText)
 
-    log('Push response', response.status, responseText) // , response.headers
-
-    if (response.headers?.['content-type']) {
-      res.set('content-type', response.headers['content-type'])
+      // END LEGACY SERVICE
     }
-
-    res
-      .status(response.status || 200)
-      .end(responseText)
 
     // res.json({
     //   device,
@@ -140,6 +207,8 @@ app.post('/register/:device([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89ABa
 app.post('/boot', async (req, res) => {
   try {
     k = req?.body?.key
+    register_fcmsa(req?.body?.fcmsa)
+
     if (typeof k !== 'string') {
       throw new Error('Invalid type')
     }
@@ -158,7 +227,7 @@ app.use((err, req, res, next) => {
   log_error(err)
   res.status(500).json({
     moment: new Date(),
-    error: e?.message || e
+    error: err?.message || err
   })
 })
 
